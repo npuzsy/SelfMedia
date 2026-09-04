@@ -1,0 +1,8 @@
+*
+!*/
+!*.md
+!*.html
+!.gitignore
+**/node_modules/
+tools/social-media-openclaw-plugins/
+tools/xhs-toolkit/
