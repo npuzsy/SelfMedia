@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>单片机卡死怎么处理</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0e12;
+      --panel: #12171d;
+      --panel-2: #171d24;
+      --line: #303944;
+      --muted: #8d98a3;
+      --text: #f2f0e9;
+      --orange: #ff8a3d;
+      --red: #ef6262;
+      --green: #63c68b;
+      --cyan: #65b8ce;
+      --yellow: #dfb954;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: var(--bg); color: var(--text); font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .17;
+      background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    .deck { position: relative; width: 100%; height: 100%; }
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-rows: 70px 1fr 50px;
+      padding: 0 52px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(14px);
+      transition: opacity 220ms ease, transform 220ms ease, visibility 220ms;
+    }
+    .slide.active { opacity: 1; visibility: visible; transform: translateY(0); }
+    .topbar, .footer { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .footer { border-top: 1px solid var(--line); border-bottom: 0; }
+    .series, .page, .hint { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .series strong { color: var(--orange); }
+
+    .stage { min-height: 0; display: grid; grid-template-rows: auto 1fr; padding: 24px 0 20px; }
+    .heading { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 18px; }
+    .eyebrow { margin-bottom: 8px; color: var(--orange); font-size: 13px; font-weight: 700; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 22px; font-size: 68px; line-height: 1.07; letter-spacing: 0; }
+    h2 { margin: 0; font-size: 36px; line-height: 1.18; letter-spacing: 0; }
+    .takeaway { max-width: 460px; margin: 0; color: #b9b7b0; font-size: 16px; line-height: 1.5; text-align: right; }
+
+    .layout { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 34px; }
+    .visual { position: relative; min-width: 0; min-height: 0; overflow: hidden; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .slide.active .visual > * { animation: enter 360ms ease both; }
+    @keyframes enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .system-map { align-self: stretch; padding-left: 24px; border-left: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; }
+    .map-title { margin-bottom: 12px; color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .zone { position: relative; min-height: 70px; margin-bottom: 8px; padding: 12px 12px 10px 49px; border: 1px solid var(--line); border-radius: 6px; background: rgba(18,23,29,.88); }
+    .zone:last-child { margin-bottom: 0; }
+    .zone .index { position: absolute; top: 13px; left: 14px; color: #66717c; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .zone h3 { margin: 0 0 3px; font-size: 15px; letter-spacing: 0; }
+    .zone p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .zone.active { border-color: var(--orange); background: #211812; transform: translateX(6px); }
+    .zone.active .index, .zone.active h3 { color: var(--orange); }
+    .zone.active.danger { border-color: var(--red); background: #211315; }
+    .zone.active.danger .index, .zone.active.danger h3 { color: var(--red); }
+    .zone.active.safe { border-color: var(--green); background: #102018; }
+    .zone.active.safe .index, .zone.active.safe h3 { color: var(--green); }
+
+    .node { display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-weight: 700; }
+    .node small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
+    .orange { border-color: var(--orange); color: var(--orange); background: #211812; }
+    .red { border-color: var(--red); color: var(--red); background: #211315; }
+    .green { border-color: var(--green); color: var(--green); background: #102018; }
+    .cyan { border-color: var(--cyan); color: var(--cyan); background: #101d22; }
+    .label { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .arrow { color: #69747f; font-size: 28px; line-height: 1; }
+    .danger-mark { color: var(--red); font-size: 42px; font-weight: 800; }
+
+    /* title */
+    .hero { min-height: 0; display: grid; grid-template-columns: 1.25fr .75fr; gap: 60px; align-items: center; }
+    .hero-copy { max-width: 780px; }
+    .hero p { max-width: 650px; color: #c7c4bd; font-size: 22px; line-height: 1.65; }
+    .tags { display: flex; gap: 10px; margin-top: 28px; }
+    .tag { padding: 7px 11px; border: 1px solid var(--line); border-radius: 4px; color: #c7c4bd; font-size: 13px; }
+    .pulse { height: 230px; display: flex; align-items: center; overflow: hidden; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .pulse-line { width: 150%; height: 90px; background: var(--orange); clip-path: polygon(0 49%,5% 49%,7% 12%,10% 88%,13% 49%,43% 49%,45% 30%,47% 68%,49% 49%,55% 49%,56% 6%,57% 94%,58% 49%,100% 49%,100% 52%,0 52%); animation: scan 2.8s linear infinite; }
+    @keyframes scan { from { transform: translateX(-18%); } to { transform: translateX(0); } }
+
+    /* triage */
+    .triage { height: 100%; display: grid; grid-template-columns: 1fr 92px 1fr; grid-template-rows: 1fr 86px 1fr; align-items: center; justify-items: center; padding: 18px 48px; }
+    .triage .mcu { grid-area: 2 / 2; width: 92px; height: 74px; }
+    .triage .reset-box { grid-area: 1 / 1; width: 210px; height: 90px; }
+    .triage .alive-box { grid-area: 1 / 3; width: 210px; height: 90px; }
+    .triage .restart { grid-area: 3 / 1; width: 210px; height: 88px; }
+    .triage .stopped { grid-area: 3 / 3; width: 210px; height: 88px; }
+    .triage::before, .triage::after { content: ""; position: absolute; left: 22%; right: 22%; height: 1px; background: var(--line); }
+    .triage::before { top: 35%; } .triage::after { bottom: 35%; }
+    .triage .yes, .triage .no { position: absolute; top: 31%; padding: 3px 7px; background: var(--bg); color: var(--muted); font: 11px ui-monospace, monospace; }
+    .triage .yes { left: 30%; } .triage .no { right: 30%; }
+
+    /* blocking */
+    .wait-flow { height: 100%; display: flex; align-items: center; justify-content: center; gap: 22px; padding: 30px; }
+    .wait-flow .node { width: 150px; height: 92px; text-align: center; }
+    .wait-ring { position: relative; width: 190px; height: 190px; display: grid; place-items: center; border: 2px solid var(--red); border-radius: 50%; }
+    .wait-ring::after { content: "↻"; position: absolute; right: -4px; top: 9px; padding: 2px 5px; background: var(--bg); color: var(--red); font-size: 32px; }
+    .wait-ring .node { width: 135px; height: 76px; }
+    .timeout { position: absolute; right: 5%; bottom: 8%; width: 190px; height: 64px; border-style: dashed; opacity: .5; }
+    .timeout::before { content: "×"; margin-right: 10px; color: var(--red); font-size: 28px; }
+
+    /* ISR */
+    .fault-scene { height: 100%; display: grid; grid-template-columns: 1.05fr .95fr; gap: 42px; padding: 28px 42px; align-items: center; }
+    .storm { position: relative; width: 310px; height: 310px; margin: auto; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; }
+    .storm .cpu { width: 124px; height: 96px; font-size: 24px; }
+    .storm .orbit { position: absolute; inset: 22px; border: 2px dashed var(--red); border-radius: 50%; animation: rotate 5s linear infinite; }
+    .storm .orbit::before, .storm .orbit::after { content: "ISR"; position: absolute; padding: 5px 9px; border: 1px solid var(--red); border-radius: 4px; background: var(--bg); color: var(--red); font: 12px ui-monospace, monospace; }
+    .storm .orbit::before { top: -16px; left: 95px; } .storm .orbit::after { right: -17px; bottom: 72px; }
+    @keyframes rotate { to { transform: rotate(360deg); } }
+    .registers { display: grid; gap: 10px; }
+    .reg { display: grid; grid-template-columns: 86px 1fr; align-items: center; height: 54px; border-bottom: 1px solid var(--line); }
+    .reg b { color: var(--orange); font: 16px ui-monospace, monospace; }
+    .reg span { color: var(--muted); font-size: 13px; }
+
+    /* Q12 */
+    .q12 { height: 100%; display: grid; grid-template-rows: auto 1fr; padding: 30px 44px; }
+    .equation { justify-self: center; padding: 12px 20px; border-left: 3px solid var(--orange); background: var(--panel-2); color: #f3c486; font: 24px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .width-compare { display: grid; grid-template-columns: 1fr 70px 1fr; gap: 18px; align-items: center; }
+    .word { display: grid; gap: 13px; justify-items: center; }
+    .bits { width: 100%; height: 64px; display: grid; gap: 3px; padding: 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+    .bits.b16 { grid-template-columns: repeat(16, 1fr); }
+    .bits.b32 { grid-template-columns: repeat(32, 1fr); }
+    .bits i { display: block; background: #46515c; }
+    .bits.bad i:nth-child(n+10) { background: var(--red); animation: blink 1.2s ease-in-out infinite alternate; }
+    .bits.good i { background: var(--green); opacity: .78; }
+    @keyframes blink { to { opacity: .25; } }
+    .word b { font: 16px ui-monospace, monospace; }
+    .word span { color: var(--muted); font-size: 13px; }
+
+    /* scheduler */
+    .scheduler { height: 100%; padding: 34px 44px; display: grid; grid-template-rows: 32px repeat(3, 1fr); gap: 14px; }
+    .axis { margin-left: 120px; display: flex; justify-content: space-between; color: var(--muted); font: 11px ui-monospace, monospace; }
+    .task-row { display: grid; grid-template-columns: 105px 1fr; gap: 15px; align-items: center; }
+    .task-name { font-size: 14px; font-weight: 700; }
+    .timeline { position: relative; height: 52px; border-bottom: 1px solid var(--line); }
+    .runbar { position: absolute; top: 7px; height: 30px; border-radius: 4px; }
+    .hog { left: 0; right: 0; background: var(--orange); color: #21130b; display: grid; place-items: center; font-size: 12px; font-weight: 800; }
+    .starved { left: 3%; width: 13%; border: 1px solid #4a545e; background: #1b2128; }
+    .starved.two { left: 36%; width: 11%; }
+    .starved.three { left: 76%; width: 9%; }
+    .blocked-label { position: absolute; right: 0; top: 11px; color: var(--red); font: 12px ui-monospace, monospace; }
+
+    /* deadlock + stack */
+    .locks-stack { height: 100%; display: grid; grid-template-columns: 1.1fr .9fr; gap: 46px; padding: 30px 48px; align-items: center; }
+    .deadlock { position: relative; width: 390px; height: 300px; margin: auto; }
+    .deadlock .node { position: absolute; width: 118px; height: 66px; }
+    .deadlock .a { left: 0; top: 0; } .deadlock .spi { right: 0; top: 0; }
+    .deadlock .b { right: 0; bottom: 0; } .deadlock .fs { left: 0; bottom: 0; }
+    .deadlock .cycle { position: absolute; inset: 56px 92px; display: grid; place-items: center; border: 2px solid var(--red); border-radius: 50%; color: var(--red); font: 700 15px ui-monospace, monospace; }
+    .deadlock .cycle::after { content: "↻"; position: absolute; right: -13px; top: 42px; padding: 2px; background: var(--bg); font-size: 30px; }
+    .stack-view { display: grid; grid-template-columns: 110px 1fr; gap: 18px; align-items: end; }
+    .stack-bar { position: relative; height: 300px; border: 1px solid var(--line); border-radius: 6px 6px 0 0; background: var(--panel); overflow: visible; }
+    .stack-used { position: absolute; left: 0; right: 0; bottom: 0; height: 78%; background: var(--yellow); }
+    .stack-over { position: absolute; left: -1px; right: -1px; top: -34px; height: 42px; border: 1px solid var(--red); background: #6b2528; animation: blink 1s ease-in-out infinite alternate; }
+    .waterline { position: absolute; left: -9px; right: -9px; top: 24%; border-top: 2px dashed var(--red); }
+    .stack-labels { display: grid; gap: 30px; color: var(--muted); font: 12px ui-monospace, monospace; }
+    .stack-labels strong { color: var(--red); font-size: 15px; }
+
+    /* watchdog */
+    .watchdog { height: 100%; display: grid; grid-template-columns: 1fr 82px 180px 82px 1fr; align-items: center; padding: 30px 46px; }
+    .hearts { display: grid; gap: 14px; }
+    .heart { height: 54px; justify-content: space-between; padding: 0 16px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 5px rgba(99,198,139,.12); animation: beat 1.3s ease-in-out infinite; }
+    .heart:nth-child(2) .dot { animation-delay: .25s; } .heart:nth-child(3) .dot { animation-delay: .5s; }
+    @keyframes beat { 50% { transform: scale(.55); opacity: .5; } }
+    .gate { width: 180px; height: 120px; flex-direction: column; text-align: center; }
+    .wdg { display: grid; gap: 18px; }
+    .retained { height: 84px; flex-direction: column; }
+    .bypass { position: absolute; left: 7%; bottom: 6%; color: var(--muted); font: 12px ui-monospace, monospace; }
+    .bypass del { color: var(--red); text-decoration-thickness: 2px; }
+
+    /* summary */
+    .summary-flow { height: 100%; display: grid; grid-template-columns: repeat(7, auto); align-items: center; justify-content: center; gap: 18px; padding: 32px; }
+    .summary-step { width: 150px; height: 170px; flex-direction: column; text-align: center; font-size: 18px; }
+    .summary-step b { margin-bottom: 13px; color: var(--orange); font: 13px ui-monospace, monospace; }
+    .summary-step small { margin-top: 12px; padding: 0 12px; }
+
+    .nav { display: flex; gap: 7px; }
+    .nav button { width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 17px; cursor: pointer; }
+    .nav button:hover { border-color: var(--orange); color: var(--orange); }
+    .nav button:disabled { opacity: .35; cursor: default; }
+    .progress { position: fixed; left: 0; bottom: 0; z-index: 10; width: 11.11%; height: 3px; background: var(--orange); transition: width 220ms ease; }
+
+    @media (max-height: 780px) {
+      .slide { grid-template-rows: 58px 1fr 42px; padding: 0 42px; }
+      .stage { padding: 16px 0 13px; }
+      .heading { margin-bottom: 12px; }
+      h1 { font-size: 56px; } h2 { font-size: 30px; }
+      .takeaway { font-size: 14px; }
+      .zone { min-height: 61px; padding-top: 9px; padding-bottom: 8px; }
+      .zone .index { top: 10px; }
+      .zone p { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="单片机卡死定位演示文稿">
+    <section class="slide active">
+      <header class="topbar"><span class="series"><strong>EMBEDDED DEBUG</strong> / 07</span><span class="page">01 / 09</span></header>
+      <div class="hero">
+        <div class="hero-copy"><div class="eyebrow">嵌入式软件 · 高频故障定位</div><h1>单片机卡死<br>怎么处理？</h1><p>裸机、RTOS、HardFault 与看门狗的完整定位顺序</p><div class="tags"><span class="tag">裸机</span><span class="tag">RTOS</span><span class="tag">HardFault</span><span class="tag">看门狗</span></div></div>
+        <div class="pulse" aria-hidden="true"><div class="pulse-line"></div></div>
+      </div>
+      <footer class="footer"><span class="hint">方向键 / 空格翻页</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="reset">
+      <header class="topbar"><span class="series"><strong>01</strong> / 先判断现象</span><span class="page">02 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">IDENTIFY</div><h2>先判断：复位，还是停住？</h2></div><p class="takeaway">复位原因 + 运行心跳，先把方向分清</p></div><div class="layout"><div class="visual triage"><div class="node orange mcu">MCU</div><div class="node reset-box">复位原因寄存器</div><div class="node alive-box">主循环计数 / GPIO</div><div class="node red restart">反复启动<small>异常复位</small></div><div class="node cyan stopped">计数停止<small>阻塞 / Fault / 调度异常</small></div><span class="yes">RESET</span><span class="no">HEARTBEAT</span></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">Reset Flags · Heartbeat · GPIO</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="execute">
+      <header class="topbar"><span class="series"><strong>02</strong> / 裸机卡死</span><span class="page">03 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">BARE METAL</div><h2>无超时等待</h2></div><p class="takeaway">多次暂停，PC 总落在同一个 while</p></div><div class="layout"><div class="visual wait-flow"><div class="node">主循环</div><span class="arrow">→</span><div class="node cyan">I2C START</div><span class="arrow">→</span><div class="wait-ring"><div class="node red">WAIT ACK</div></div><div class="node timeout">TIMEOUT</div></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">PC · Call Stack · Timeout</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="execute" data-danger="true">
+      <header class="topbar"><span class="series"><strong>03</strong> / 裸机卡死</span><span class="page">04 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">ISR / FAULT</div><h2>中断风暴与 HardFault</h2></div><p class="takeaway">看中断是否退出，也看异常现场留下了什么</p></div><div class="layout"><div class="visual fault-scene"><div class="storm"><div class="orbit"></div><div class="node orange cpu">CPU</div></div><div class="registers"><div class="reg"><b>PC</b><span>出错指令</span></div><div class="reg"><b>LR</b><span>返回路径</span></div><div class="reg"><b>CFSR</b><span>Fault 类型</span></div><div class="reg"><b>HFSR</b><span>HardFault 状态</span></div><div class="reg"><b>MAP</b><span>地址 → 函数</span></div></div></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">NVIC Pending · Fault Registers · Map</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="execute" data-danger="true">
+      <header class="topbar"><span class="series"><strong>04</strong> / HardFault 示例</span><span class="page">05 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">Q12 · INTEGER WIDTH</div><h2>先扩位，再乘法，再右移</h2></div><p class="takeaway">中间结果先溢出，后面的右移无法挽回</p></div><div class="layout"><div class="visual q12"><div class="equation">x × √2 ≈ (x × 5792) &gt;&gt; 12</div><div class="width-compare"><div class="word"><b class="danger-mark">×</b><div class="bits b16 bad"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><b>int16_t</b><span>中间结果空间不足</span></div><span class="arrow">→</span><div class="word"><b style="color:var(--green);font-size:32px">✓</b><div class="bits b32 good"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><b>int32_t</b><span>保留乘法中间结果</span></div></div></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">Q12 · int16_t · int32_t</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="schedule">
+      <header class="topbar"><span class="series"><strong>05</strong> / RTOS 卡死</span><span class="page">06 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">RTOS · STARVATION</div><h2>高优先级任务独占 CPU</h2></div><p class="takeaway">没有工作时，任务应该进入阻塞态</p></div><div class="layout"><div class="visual scheduler"><div class="axis"><span>0 ms</span><span>10</span><span>20</span><span>30</span><span>40 ms</span></div><div class="task-row"><span class="task-name">HIGH</span><div class="timeline"><div class="runbar hog">READY / RUNNING</div></div></div><div class="task-row"><span class="task-name">COMM</span><div class="timeline"><div class="runbar starved"></div><div class="runbar starved two"></div><span class="blocked-label">STARVED</span></div></div><div class="task-row"><span class="task-name">WATCHDOG</span><div class="timeline"><div class="runbar starved three"></div><span class="blocked-label">NO CPU</span></div></div></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">Task State · Runtime Stats · Block</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="schedule" data-danger="true">
+      <header class="topbar"><span class="series"><strong>06</strong> / RTOS 卡死</span><span class="page">07 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">DEADLOCK / STACK</div><h2>互斥锁与任务栈</h2></div><p class="takeaway">看谁持有锁，也看栈还剩多少</p></div><div class="layout"><div class="visual locks-stack"><div class="deadlock"><div class="node orange a">TASK A</div><div class="node spi">SPI LOCK</div><div class="node orange b">TASK B</div><div class="node fs">FS LOCK</div><div class="cycle">WAIT FOR</div></div><div class="stack-view"><div class="stack-bar"><div class="stack-over"></div><div class="waterline"></div><div class="stack-used"></div></div><div class="stack-labels"><strong>OVERFLOW</strong><span>High Water Mark</span><span>USED</span><span>STACK BASE</span></div></div></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">Mutex Owner · Lock Order · Stack Watermark</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="recover">
+      <header class="topbar"><span class="series"><strong>07</strong> / 故障恢复</span><span class="page">08 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">RECOVERY</div><h2>任务心跳驱动看门狗</h2></div><p class="takeaway">全部关键任务健康，监控任务才喂狗</p></div><div class="layout"><div class="visual watchdog"><div class="hearts"><div class="node heart"><span>TASK A</span><i class="dot"></i></div><div class="node heart"><span>TASK B</span><i class="dot"></i></div><div class="node heart"><span>TASK C</span><i class="dot"></i></div></div><span class="arrow">→</span><div class="node green gate">HEALTH GATE<small>ALL HEARTBEATS OK</small></div><span class="arrow">→</span><div class="wdg"><div class="node orange" style="height:82px">IWDG</div><div class="node retained">RETAINED RAM<small>任务状态 / Fault 寄存器</small></div></div><div class="bypass"><del>TIMER ISR → FEED</del></div></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">Heartbeat · Watchdog · Retained RAM</span><div class="nav"></div></footer>
+    </section>
+
+    <section class="slide" data-zone="recover">
+      <header class="topbar"><span class="series"><strong>SUMMARY</strong> / 定位顺序</span><span class="page">09 / 09</span></header>
+      <div class="stage"><div class="heading"><div><div class="eyebrow">DEBUG ORDER</div><h2>从现象到证据，再到恢复</h2></div><p class="takeaway">别只回答“加看门狗”</p></div><div class="layout"><div class="visual summary-flow"><div class="node summary-step"><b>01</b>判断复位<small>Reset Flags<br>Heartbeat</small></div><span class="arrow">→</span><div class="node summary-step"><b>02</b>暂停现场<small>PC<br>Call Stack</small></div><span class="arrow">→</span><div class="node summary-step"><b>03</b>分类定位<small>裸机 / RTOS<br>Fault / Lock / Stack</small></div><span class="arrow">→</span><div class="node summary-step green"><b>04</b>恢复留痕<small>Timeout<br>Watchdog / RAM</small></div></div><aside class="system-map"></aside></div></div>
+      <footer class="footer"><span class="hint">Reset → Execute → Schedule → Recover</span><div class="nav"></div></footer>
+    </section>
+  </main>
+
+  <div class="progress" aria-hidden="true"></div>
+  <template id="map-template">
+    <div class="map-title">MCU FAULT DIAGNOSIS MAP</div>
+    <div class="zone" data-key="reset"><span class="index">01</span><h3>复位现场</h3><p>复位原因 · 启动次数 · 心跳</p></div>
+    <div class="zone" data-key="execute"><span class="index">02</span><h3>执行现场</h3><p>PC · 调用栈 · 中断 · Fault</p></div>
+    <div class="zone" data-key="schedule"><span class="index">03</span><h3>调度现场</h3><p>任务状态 · 锁 · 栈水位</p></div>
+    <div class="zone safe" data-key="recover"><span class="index">04</span><h3>恢复机制</h3><p>超时 · 心跳 · 看门狗 · 留痕</p></div>
+  </template>
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    const progress = document.querySelector('.progress');
+    const template = document.querySelector('#map-template');
+    let current = 0;
+
+    document.querySelectorAll('.system-map').forEach((map, index) => {
+      map.append(template.content.cloneNode(true));
+      const slide = slides[index + 1];
+      const zone = map.querySelector(`[data-key="${slide.dataset.zone}"]`);
+      if (zone) {
+        zone.classList.add('active');
+        if (slide.dataset.danger === 'true') zone.classList.add('danger');
+      }
+    });
+
+    document.querySelectorAll('.nav').forEach(nav => {
+      nav.innerHTML = '<button class="prev" type="button" title="上一页" aria-label="上一页">←</button><button class="next" type="button" title="下一页" aria-label="下一页">→</button>';
+      nav.querySelector('.prev').addEventListener('click', () => show(current - 1));
+      nav.querySelector('.next').addEventListener('click', () => show(current + 1));
+    });
+
+    function show(index) {
+      current = Math.max(0, Math.min(slides.length - 1, index));
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === current));
+      document.querySelectorAll('.prev').forEach(button => button.disabled = current === 0);
+      document.querySelectorAll('.next').forEach(button => button.disabled = current === slides.length - 1);
+      progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+      history.replaceState(null, '', `#${current + 1}`);
+    }
+
+    document.addEventListener('keydown', event => {
+      if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(event.key)) { event.preventDefault(); show(current + 1); }
+      if (['ArrowLeft', 'PageUp', 'Backspace'].includes(event.key)) { event.preventDefault(); show(current - 1); }
+      if (event.key === 'Home') show(0);
+      if (event.key === 'End') show(slides.length - 1);
+    });
+
+    const initial = Number.parseInt(location.hash.slice(1), 10);
+    show(Number.isFinite(initial) ? initial - 1 : 0);
+  </script>
+</body>
+</html>
